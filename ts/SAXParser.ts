@@ -10,7 +10,8 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { existsSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
@@ -28,6 +29,7 @@ import { XMLUtils } from "./XMLUtils.js";
 import { AttDecl } from "./dtd/AttDecl.js";
 import { DTDGrammar } from "./dtd/DTDGrammar.js";
 import { DTDParser } from "./dtd/DTDParser.js";
+import { FetchUrls } from "./fetchUrls.js";
 import { Grammar, GrammarType, ValidationError, ValidationResult } from "./grammar/Grammar.js";
 import { SchemaBuilder } from "./schema/SchemaBuilder.js";
 import { SchemaGrammar } from "./schema/SchemaGrammar.js";
@@ -1157,7 +1159,11 @@ export class SAXParser {
             this.failedSchemaLocations.add(location);
             return;
         }
-        if (!this.loadSchemaDefaults(resolvedPath, location)) {
+        const schemaLoaded: boolean = this.loadSchemaDefaults(resolvedPath, location);
+        if (resolvedPath.startsWith(tmpdir())) {
+            try { unlinkSync(resolvedPath); } catch (e: unknown) { /* ignore */ }
+        }
+        if (!schemaLoaded) {
             this.failedSchemaLocations.add(location);
         }
     }
@@ -1255,6 +1261,31 @@ export class SAXParser {
             }
         }
 
+        if (location.startsWith('http')) {
+            return this.resolveHttp(location);
+        }
+
+        return undefined;
+    }
+
+    resolveHttp(url: string): string | undefined {
+        // make sure it is a valid url first
+        try {
+            new URL(url);
+        } catch (error) {
+            return undefined;
+        }
+        // get the file name at the end of the url
+        const urlParts: string[] = url.split('/');
+        const lastPart: string = urlParts[urlParts.length - 1];
+        const tempPath: string = resolve(tmpdir(), lastPart);
+        let fetcher: FetchUrls = new FetchUrls();
+        if (fetcher.fetch(url, tempPath)) {
+            return tempPath;
+        }
+        if (this.validating) {
+            throw new Error(fetcher.getError() || 'Failed to fetch schema from ' + url);
+        }
         return undefined;
     }
 
@@ -1728,11 +1759,18 @@ export class SAXParser {
         try {
             const updatedGrammar: DTDGrammar = parser.parseDTD(resolvedLocation);
             this.contentHandler?.setGrammar(updatedGrammar);
-        } catch (error) {
+        } catch (error: unknown) {
+            if (resolvedLocation.startsWith(tmpdir())) {
+                try { unlinkSync(resolvedLocation); } catch (e: unknown) { /* ignore */ }
+            }
             if (this.validating) {
                 throw error;
             }
-            console.warn(`Warning: Failed to parse external subset ${resolvedLocation}: ${(error as Error).message}`);
+            console.warn('Warning: Failed to parse external subset ' + resolvedLocation + ': ' + (error as Error).message);
+            return;
+        }
+        if (resolvedLocation.startsWith(tmpdir())) {
+            try { unlinkSync(resolvedLocation); } catch (e: unknown) { /* ignore */ }
         }
     }
 
@@ -1749,7 +1787,7 @@ export class SAXParser {
         const lowerSystemId: string = systemId.toLowerCase();
         if (lowerSystemId.startsWith('http://') || lowerSystemId.startsWith('https://')) {
             if (this.validating) {
-                throw new Error(`External subset retrieval over HTTP is not supported: ${systemId}`);
+                return this.resolveHttp(systemId);
             }
             console.warn(`Warning: External subset over HTTP/HTTPS is not supported: ${systemId}`);
             return undefined;
