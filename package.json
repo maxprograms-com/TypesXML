@@ -50,7 +50,7 @@
     "url": "https://github.com/maxprograms-com/TypesXML.git"
   },
   "devDependencies": {
-    "@types/node": "^24.12.4",
+    "@types/node": "^24.13.0",
     "typescript": "^6.0.3"
   }
 }
