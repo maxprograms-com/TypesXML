@@ -1448,7 +1448,7 @@ export class SAXParser {
         this.contentHandler?.processingInstruction(target, data);
 
         if (target === 'xml-model') {
-            const attributesFromPi: Map<string, string> = this.parseAttributes(data);
+            const attributesFromPi: Map<string, string> = this.parsePseudoAttributes(data);
             const href: string | undefined = attributesFromPi.get('href');
             const schemaType: string | undefined = attributesFromPi.get('schematypens');
             if (href) {
@@ -2149,6 +2149,18 @@ export class SAXParser {
         pairs.forEach((pair) => {
             map.set(pair.name, pair.value);
         });
+        return map;
+    }
+
+    private parsePseudoAttributes(text: string): Map<string, string> {
+        const map: Map<string, string> = new Map<string, string>();
+        const pattern: RegExp = /([^\s='"?/]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(text)) !== null) {
+            const name: string = match[1];
+            const value: string = match[2] !== undefined ? match[2] : match[3];
+            map.set(name, value);
+        }
         return map;
     }
 
