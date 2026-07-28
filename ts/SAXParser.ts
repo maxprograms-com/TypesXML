@@ -464,53 +464,56 @@ export class SAXParser {
                 this.endCDATA();
                 continue;
             }
-            if (this.lookingAt('<?xml ') || this.lookingAt('<?xml\t') || this.lookingAt('<?xml\r') || this.lookingAt('<?xml\n')) {
-                if (this.rootParsed && this.elementStack > 0) {
-                    throw new Error('Malformed XML declaration: declaration cannot appear inside the document element');
+            const leadChar: string = this.buffer.charAt(this.pointer);
+            if (leadChar === '<' || leadChar === '&' || leadChar === ']') {
+                if (this.lookingAt('<?xml ') || this.lookingAt('<?xml\t') || this.lookingAt('<?xml\r') || this.lookingAt('<?xml\n')) {
+                    if (this.rootParsed && this.elementStack > 0) {
+                        throw new Error('Malformed XML declaration: declaration cannot appear inside the document element');
+                    }
+                    this.parseXMLDeclaration();
+                    continue;
                 }
-                this.parseXMLDeclaration();
-                continue;
-            }
-            if (this.lookingAt('<!DOCTYPE')) {
-                this.parseDoctype();
-                continue;
-            }
-            if (this.lookingAt('<!--')) {
-                this.parseComment();
-                continue;
-            }
-            if (this.lookingAt('<?')) {
-                this.parseProcessingInstruction();
-                continue;
-            }
-            if (this.lookingAt('</')) {
-                this.endElement();
-                continue;
-            }
-            if (this.lookingAt('<![CDATA[')) {
-                this.startCDATA();
-                continue;
-            }
-            if (this.lookingAt(']]>')) {
-                if (!this.inCDATASection) {
-                    throw new Error('Malformed XML document: "]]>" cannot appear in character data');
+                if (this.lookingAt('<!DOCTYPE')) {
+                    this.parseDoctype();
+                    continue;
                 }
-                this.endCDATA();
-                continue;
-            }
-            if (this.lookingAt('&')) {
-                if (!this.rootParsed || this.elementStack === 0) {
-                    throw new Error('Malformed XML document: text found outside the document element');
+                if (this.lookingAt('<!--')) {
+                    this.parseComment();
+                    continue;
                 }
-                this.parseEntityReference();
-                continue;
-            }
-            if (this.lookingAt('<')) {
-                if (this.rootParsed && this.elementStack === 0) {
-                    throw new Error('Malformed XML document: multiple root elements');
+                if (this.lookingAt('<?')) {
+                    this.parseProcessingInstruction();
+                    continue;
                 }
-                this.startElement();
-                continue;
+                if (this.lookingAt('</')) {
+                    this.endElement();
+                    continue;
+                }
+                if (this.lookingAt('<![CDATA[')) {
+                    this.startCDATA();
+                    continue;
+                }
+                if (this.lookingAt(']]>')) {
+                    if (!this.inCDATASection) {
+                        throw new Error('Malformed XML document: "]]>" cannot appear in character data');
+                    }
+                    this.endCDATA();
+                    continue;
+                }
+                if (this.lookingAt('&')) {
+                    if (!this.rootParsed || this.elementStack === 0) {
+                        throw new Error('Malformed XML document: text found outside the document element');
+                    }
+                    this.parseEntityReference();
+                    continue;
+                }
+                if (this.lookingAt('<')) {
+                    if (this.rootParsed && this.elementStack === 0) {
+                        throw new Error('Malformed XML document: multiple root elements');
+                    }
+                    this.startElement();
+                    continue;
+                }
             }
             const codePoint: number = this.buffer.codePointAt(this.pointer)!;
             XMLUtils.ensureValidXmlCodePoint(this.xmlVersion, codePoint, 'character data');
@@ -612,7 +615,8 @@ export class SAXParser {
                         throw new NeedMoreDataError();
                     }
                 }
-                if (XMLUtils.isXmlSpace(this.buffer.charAt(this.pointer)) || this.lookingAt('>') || this.lookingAt('/>')) {
+                const nameChar: string = this.buffer.charAt(this.pointer);
+                if (XMLUtils.isXmlSpace(nameChar) || nameChar === '>' || (nameChar === '/' && this.lookingAt('/>'))) {
                     break;
                 }
                 name += this.buffer.charAt(this.pointer++);
