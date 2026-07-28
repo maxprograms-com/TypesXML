@@ -720,13 +720,13 @@ export class SAXParser {
                 throw new Error('Malformed XML document: unexpected character "' + terminatorChar + '" at end of start tag');
             }
 
-            // Add this element as a child of its parent (if parent exists)
-            if (this.childrenNames.length > 0) {
-                let parentChildren: string[] = this.childrenNames[this.childrenNames.length - 1];
-                parentChildren.push(name);
+            if (this.validating) {
+                if (this.childrenNames.length > 0) {
+                    let parentChildren: string[] = this.childrenNames[this.childrenNames.length - 1];
+                    parentChildren.push(name);
+                }
+                this.childrenNames.push([]);
             }
-            // Push a new empty array for this element's children
-            this.childrenNames.push([]);
 
             this.contentHandler?.startElement(name, attributes);
             this.elementStack++;
@@ -750,7 +750,9 @@ export class SAXParser {
                 this.contentHandler?.endElement(name);
                 this.elementStack--;
                 this.elementNameStack.pop();
-                this.childrenNames.pop();
+                if (this.validating) {
+                    this.childrenNames.pop();
+                }
                 if (namespacePushed && this.namespaceContextStack.length > 0) {
                     this.namespaceContextStack.pop();
                     namespacePushed = false;
@@ -851,7 +853,7 @@ export class SAXParser {
         }
         this.contentHandler?.endElement(name);
         this.elementStack--;
-        if (this.childrenNames.length > 0) {
+        if (this.validating && this.childrenNames.length > 0) {
             this.childrenNames.pop();
         }
         if (this.namespaceContextStack.length > 0) {
