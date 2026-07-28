@@ -1,7 +1,7 @@
 {
   "name": "typesxml",
   "productName": "TypesXML",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Open source XML library written in TypeScript",
   "keywords": [
     "XML",
