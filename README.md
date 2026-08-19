@@ -17,7 +17,6 @@ TypesXML sits between these extremes. It is built on a SAX-style foundation but 
 - Streaming-oriented processing without requiring full in-memory document trees
 - Structured access to XML data while preserving parsing determinism
 - Native support for DTD and XML Schema validation workflows
-- Aligned with translation/localization formats rather than generic XML editing
 - Designed for backend and tooling scenarios, not browser DOM manipulation
 
 ## Features
