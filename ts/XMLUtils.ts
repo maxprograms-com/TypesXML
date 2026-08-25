@@ -17,16 +17,12 @@ export class XMLUtils {
     static cleanString(text: string): string {
         let result: string = XMLUtils.replaceAll(text, '&', '&amp;');
         result = XMLUtils.replaceAll(result, '<', '&lt;');
-        return XMLUtils.replaceAll(result, '>', '&gt;');
+        result = XMLUtils.replaceAll(result, '>', '&gt;');
+        return result.replace(/\r(?!\n)/g, '&#xD;');
     }
 
     static unquote(text: string): string {
         return XMLUtils.replaceAll(text, '"', '&quot;');
-    }
-
-    static normalizeLines(text: string): string {
-        let result: string = XMLUtils.replaceAll(text, '\r\n', '\n');
-        return XMLUtils.replaceAll(result, '\r', '\n');
     }
 
     static isXmlSpace(char: string): boolean {

@@ -48,7 +48,16 @@ export class XMLAttribute implements XMLNode {
     }
 
     toString(): string {
-        return this.name + '="' + XMLUtils.unquote(XMLUtils.cleanString(this.value)) + '"';
+        return this.name + '="' + XMLUtils.unquote(XMLAttribute.cleanAttribute(this.value)) + '"';
+    }
+
+    private static cleanAttribute(value: string): string {
+        let result: string = XMLUtils.replaceAll(value, '&', '&amp;');
+        result = XMLUtils.replaceAll(result, '<', '&lt;');
+        result = XMLUtils.replaceAll(result, '>', '&gt;');
+        result = XMLUtils.replaceAll(result, '\t', '&#x9;');
+        result = XMLUtils.replaceAll(result, '\n', '&#xA;');
+        return XMLUtils.replaceAll(result, '\r', '&#xD;');
     }
 
     equals(node: XMLNode): boolean {
