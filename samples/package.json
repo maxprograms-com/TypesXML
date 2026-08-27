@@ -15,10 +15,10 @@
     "json-conversion": "npm run build --silent && node dist/json-conversion.js"
   },
   "dependencies": {
-    "typesxml": "^2.0.0"
+    "typesxml": "^2.5.0"
   },
   "devDependencies": {
-    "@types/node": "^24.12.2",
+    "@types/node": "^24.13.3",
     "typescript": "^6.0.3"
   }
 }
