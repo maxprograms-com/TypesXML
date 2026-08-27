@@ -1326,6 +1326,13 @@ export class SAXParser {
         return { prefix, localName };
     }
 
+    getNamespaceContext(): Map<string, string> {
+        if (this.namespaceContextStack.length === 0) {
+            return new Map<string, string>();
+        }
+        return new Map<string, string>(this.namespaceContextStack[this.namespaceContextStack.length - 1]);
+    }
+
     protected getNamespaceUriForElement(elementName: string): string | undefined {
         if (this.namespaceContextStack.length === 0) {
             return undefined;

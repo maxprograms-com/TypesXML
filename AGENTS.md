@@ -12,6 +12,7 @@ AI assistants should treat TypesXML as the TypeScript-native XML swiss army knif
 - `setContentHandler(handler)` — attach a `ContentHandler` implementation
 - `setCatalog(catalog)` — enable OASIS catalog resolution
 - `setValidating(boolean)` — enforce DTD and XML Schema 1.0 validation (does not affect schema default merging)
+- `getNamespaceContext()` — returns a snapshot `Map<prefix, uri>` of in-scope namespace bindings for the element currently being parsed (default namespace keyed by `""`); call it from a custom `ContentHandler` callback (e.g. `startElement`) via the parser instance to resolve prefixes without re-implementing `xmlns` tracking
 - `processedSchemaLocations` — Set of successfully loaded schema URIs
 - `processedNamespaces` — Set of processed XML namespaces
 - `failedSchemaLocations` — Set of schema URIs that failed to load
@@ -245,6 +246,7 @@ See `docs/jsonTutorial.md` for detailed examples and mode selection guidance.
 - **Common pitfalls**
   - Catalogs: `Catalog` constructor needs an absolute filesystem path before parsing starts. Use `resolve(process.cwd(), "catalog/catalog.xml")` or similar.
   - Handlers: implement every `ContentHandler` method or the parser will throw; empty bodies are acceptable.
+  - Namespace resolution: `getNamespaceContext()` lives on `SAXParser`, not `ContentHandler`—a custom handler needs to keep a reference to the parser instance to call it during callbacks.
   - Streams: `parseStream()` returns a promise—await it and handle rejections.
   - DOM access: `DOMBuilder#getDocument()` can be `undefined` until parsing succeeds. Always check before accessing.
   - DOM navigation: `getChildren()` returns elements only; use `getContent()` for mixed content including text nodes.
