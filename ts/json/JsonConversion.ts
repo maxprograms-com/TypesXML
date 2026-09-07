@@ -530,7 +530,7 @@ function elementToJsonValue(element: XMLElement, config: ElementConversionConfig
         return concatenatedText;
     }
 
-    if (!hasAttributes && !hasComments && !hasProcessing && !hasCData && !hasSignificantText && childGroups.size === 1) {
+    if (!config.includeOrderedContent && !hasAttributes && !hasComments && !hasProcessing && !hasCData && !hasSignificantText && childGroups.size === 1) {
         const [childName, values] = [...childGroups.entries()][0];
         if (childName === deriveArrayItemName(element.getName())) {
             return values;

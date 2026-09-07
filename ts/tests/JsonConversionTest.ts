@@ -64,6 +64,7 @@ async function runJsonConversionTests(): Promise<void> {
         await assertStructuredRoundTrip(samples[index], label);
     }
 
+    await assertRepeatedChildContainerRoundTrip();
     await assertPlainObjectRoundTrip();
         await assertRootInference();
     await assertFileConversions(samples[0]);
@@ -99,6 +100,17 @@ async function assertStructuredRoundTrip(xmlText: string, label: string): Promis
 
     if (jsonDocument.declaration && jsonDocument.declaration.version === undefined) {
         throw new Error(`Missing declaration details for ${label}`);
+    }
+}
+
+async function assertRepeatedChildContainerRoundTrip(): Promise<void> {
+    const xmlText: string = "<root><wrapper><item>x</item><item>y</item></wrapper></root>";
+    const originalDocument: XMLDocument = parseXml(xmlText);
+    const jsonDocument: XmlJsonDocument = xmlStringToJsonObject(xmlText, { mode: "roundtrip" });
+    const rebuiltDocument: XMLDocument = jsonObjectToXmlDocument(jsonDocument);
+
+    if (!originalDocument.equals(rebuiltDocument)) {
+        throw new Error("Repeated child container round-trip failed");
     }
 }
 
