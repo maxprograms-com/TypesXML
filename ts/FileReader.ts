@@ -44,9 +44,9 @@ export class FileReader {
         const fd = openSync(path, 'r');
         const buffer: Buffer = Buffer.alloc(3);
         const bytesRead: number = readSync(fd, buffer, 0, 3, 0);
-        closeSync(fd);
 
         if (bytesRead === 0) {
+            closeSync(fd);
             return 'utf8';
         }
 
@@ -56,13 +56,29 @@ export class FileReader {
         const UTF16BE: Buffer = Buffer.from([0xFE, 0xFF]);
 
         if (slice.length >= UTF8.length && slice.compare(UTF8, 0, UTF8.length, 0, UTF8.length) === 0) {
+            closeSync(fd);
             return 'utf8';
         }
         if (slice.length >= UTF16LE.length && slice.compare(UTF16LE, 0, UTF16LE.length, 0, UTF16LE.length) === 0) {
+            closeSync(fd);
             return 'utf16le';
         }
         if (slice.length >= UTF16BE.length && slice.compare(UTF16BE, 0, UTF16BE.length, 0, UTF16BE.length) === 0) {
+            closeSync(fd);
             return 'utf16le';
+        }
+
+        const sniffBuffer: Buffer = Buffer.alloc(200);
+        const sniffBytesRead: number = readSync(fd, sniffBuffer, 0, 200, 0);
+        closeSync(fd);
+        const prologText: string = sniffBuffer.toString('latin1', 0, sniffBytesRead);
+        const match: RegExpMatchArray | null = prologText.match(/<\?xml\s[^>]*encoding\s*=\s*(?:"([^"]+)"|'([^']+)')/i);
+        if (match) {
+            let possibleNames: Set<string> = new Set<string>(['ISO-8859-1', 'ISO8859-1']);
+            const declaredEncoding: string = (match[1] ?? match[2]).toUpperCase();
+            if (possibleNames.has(declaredEncoding)) {
+                return 'latin1';
+            }
         }
         return 'utf8';
     }

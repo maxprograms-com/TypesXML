@@ -54,7 +54,9 @@ export class SAXParser {
         ['UTF-8', 'UTF-8'],
         ['UTF-16', 'UTF-16'],
         ['UTF-16LE', 'UTF-16LE'],
-        ['UTF-16BE', 'UTF-16BE']
+        ['UTF-16BE', 'UTF-16BE'],
+        ['ISO-8859-1', 'ISO-8859-1'],
+        ['ISO8859-1', 'ISO-8859-1']
     ]);
 
     private static readonly ENCODING_NAME_PATTERN: RegExp = /^[A-Za-z][A-Za-z0-9._-]*$/;
