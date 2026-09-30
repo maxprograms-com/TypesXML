@@ -53,17 +53,12 @@ export class FileReader {
         const slice: Buffer = buffer.subarray(0, bytesRead);
         const UTF8: Buffer = Buffer.from([0xEF, 0xBB, 0xBF]);
         const UTF16LE: Buffer = Buffer.from([0xFF, 0xFE]);
-        const UTF16BE: Buffer = Buffer.from([0xFE, 0xFF]);
 
         if (slice.length >= UTF8.length && slice.compare(UTF8, 0, UTF8.length, 0, UTF8.length) === 0) {
             closeSync(fd);
             return 'utf8';
         }
         if (slice.length >= UTF16LE.length && slice.compare(UTF16LE, 0, UTF16LE.length, 0, UTF16LE.length) === 0) {
-            closeSync(fd);
-            return 'utf16le';
-        }
-        if (slice.length >= UTF16BE.length && slice.compare(UTF16BE, 0, UTF16BE.length, 0, UTF16BE.length) === 0) {
             closeSync(fd);
             return 'utf16le';
         }
