@@ -21,12 +21,11 @@ import { Constants } from "./Constants.js";
 export class XMLElement implements XMLNode {
 
     private name: string;
-    private attributes: Map<string, XMLAttribute>;
+    private attributes?: Map<string, XMLAttribute>;
     private content: Array<XMLNode>;
 
     constructor(name: string) {
         this.name = name;
-        this.attributes = new Map<string, XMLAttribute>();
         this.content = new Array<XMLNode>();
     }
 
@@ -42,33 +41,53 @@ export class XMLElement implements XMLNode {
     }
 
     hasAttribute(name: string): boolean {
+        if (!this.attributes) {
+            return false;
+        }
         return this.attributes.has(name);
     }
 
     getAttribute(name: string): XMLAttribute | undefined {
+        if (!this.attributes) {
+            return undefined;
+        }
         return this.attributes.get(name);
     }
 
     setAttribute(attribute: XMLAttribute) {
+        if (!this.attributes) {
+            this.attributes = new Map<string, XMLAttribute>();
+        }
         this.attributes.set(attribute.getName(), attribute);
     }
 
     removeAttribute(name: string): void {
-        this.attributes.delete(name);
+        if (this.attributes) {
+            this.attributes.delete(name);
+        }
     }
 
     setAttributes(array: Array<XMLAttribute>): void {
-        this.attributes.clear();
+        if (array.length === 0 && !this.attributes) {
+            return;
+        }
+        if (!this.attributes) {
+            this.attributes = new Map<string, XMLAttribute>();
+        } else {
+            this.attributes.clear();
+        }
         array.forEach((attribute: XMLAttribute) => {
-            this.attributes.set(attribute.getName(), attribute);
+            (this.attributes as Map<string, XMLAttribute>).set(attribute.getName(), attribute);
         });
     }
 
     getAttributes(): Array<XMLAttribute> {
         let result: Array<XMLAttribute> = new Array();
-        this.attributes.forEach((value) => {
-            result.push(value);
-        });
+        if (this.attributes) {
+            this.attributes.forEach((value) => {
+                result.push(value);
+            });
+        }
         return result;
     }
 
@@ -115,9 +134,11 @@ export class XMLElement implements XMLNode {
 
     getHead(): string {
         let result: string = '<' + this.name;
-        this.attributes.forEach((value: XMLAttribute) => {
-            result += ' ' + value.toString();
-        });
+        if (this.attributes) {
+            this.attributes.forEach((value: XMLAttribute) => {
+                result += ' ' + value.toString();
+            });
+        }
         result += '>';
         return result;
     }
@@ -128,9 +149,11 @@ export class XMLElement implements XMLNode {
 
     toString(): string {
         let result: string = '<' + this.name;
-        this.attributes.forEach((value: XMLAttribute) => {
-            result += ' ' + value.toString();
-        });
+        if (this.attributes) {
+            this.attributes.forEach((value: XMLAttribute) => {
+                result += ' ' + value.toString();
+            });
+        }
         if (this.content.length > 0) {
             result += '>';
             this.content.forEach((node: XMLNode) => {
@@ -143,18 +166,29 @@ export class XMLElement implements XMLNode {
 
     equals(node: XMLNode): boolean {
         if (node instanceof XMLElement) {
-            if (this.name !== node.name || this.attributes.size !== node.attributes.size || this.content.length !== node.content.length) {
+            if (this.name !== node.name) {
                 return false;
             }
-            let sameAttributes: boolean = true;
-            this.attributes.forEach((att: XMLAttribute, key: string) => {
-                let other: XMLAttribute | undefined = node.getAttribute(key);
-                if (other === undefined || att.getValue() !== other.getValue()) {
-                    sameAttributes = false;
-                }
-            });
-            if (!sameAttributes) {
+            if (this.content.length !== node.content.length) {
                 return false;
+            }
+            if (this.attributes === undefined && node.getAttributes().length !== 0) {
+                return false;
+            }
+            if (this.attributes !== undefined && this.attributes.size !== node.getAttributes().length) {
+                return false;
+            }
+            if (this.attributes !== undefined) {
+                let sameAttributes: boolean = true;
+                this.attributes.forEach((att: XMLAttribute, key: string) => {
+                    let other: XMLAttribute | undefined = node.getAttribute(key);
+                    if (other === undefined || att.getValue() !== other.getValue()) {
+                        sameAttributes = false;
+                    }
+                });
+                if (!sameAttributes) {
+                    return false;
+                }
             }
             for (let i: number = 0; i < this.content.length; i++) {
                 if (!this.content[i].equals(node.content[i])) {
