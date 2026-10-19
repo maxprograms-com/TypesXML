@@ -237,45 +237,85 @@ export class AttListDecl implements XMLNode {
             return { position: direct, length: token.length };
         }
 
-        if (token.startsWith('(') && token.endsWith(')')) {
-            const normalizedToken: string = this.normalizeEnumeration(token);
+        if (token.startsWith('NOTATION ')) {
+            const enumeration: string = token.substring('NOTATION '.length);
             let searchIndex: number = startIndex;
 
             while (searchIndex < text.length) {
-                const openIndex: number = text.indexOf('(', searchIndex);
-                if (openIndex === -1) {
+                const notationIndex: number = text.indexOf('NOTATION', searchIndex);
+                if (notationIndex === -1) {
                     break;
                 }
 
-                let depth: number = 0;
-                let cursor: number = openIndex;
-
-                while (cursor < text.length) {
-                    const char: string = text.charAt(cursor);
-                    if (char === '(') {
-                        depth++;
-                    } else if (char === ')') {
-                        depth--;
-                        if (depth === 0) {
-                            const segment: string = text.substring(openIndex, cursor + 1);
-                            if (this.normalizeEnumeration(segment) === normalizedToken) {
-                                return { position: openIndex, length: segment.length };
-                            }
-                            cursor++;
-                            break;
-                        }
-                    }
+                const beforeNotation: string = notationIndex > 0 ? text.charAt(notationIndex - 1) : '';
+                let cursor: number = notationIndex + 'NOTATION'.length;
+                const afterNotation: number = cursor;
+                while (cursor < text.length && XMLUtils.isXmlSpace(text.charAt(cursor))) {
                     cursor++;
                 }
 
-                if (depth > 0) {
-                    break;
+                if ((notationIndex === 0 || XMLUtils.isXmlSpace(beforeNotation)) &&
+                    cursor > afterNotation && text.charAt(cursor) === '(') {
+                    const enumerationMatch = this.locateEnumeration(text, enumeration, cursor);
+                    if (enumerationMatch && enumerationMatch.position === cursor) {
+                        return {
+                            position: notationIndex,
+                            length: enumerationMatch.position + enumerationMatch.length - notationIndex
+                        };
+                    }
                 }
-                searchIndex = cursor;
+
+                searchIndex = notationIndex + 'NOTATION'.length;
+            }
+        }
+
+        if (token.startsWith('(') && token.endsWith(')')) {
+            const enumerationMatch = this.locateEnumeration(text, token, startIndex);
+            if (enumerationMatch) {
+                return enumerationMatch;
             }
         }
 
         throw new Error('Invalid attribute declaration: unable to locate token ' + '\'' + token + '\'');
+    }
+
+    private locateEnumeration(text: string, token: string, startIndex: number): { position: number; length: number } | undefined {
+        const normalizedToken: string = this.normalizeEnumeration(token);
+        let searchIndex: number = startIndex;
+
+        while (searchIndex < text.length) {
+            const openIndex: number = text.indexOf('(', searchIndex);
+            if (openIndex === -1) {
+                break;
+            }
+
+            let depth: number = 0;
+            let cursor: number = openIndex;
+
+            while (cursor < text.length) {
+                const char: string = text.charAt(cursor);
+                if (char === '(') {
+                    depth++;
+                } else if (char === ')') {
+                    depth--;
+                    if (depth === 0) {
+                        const segment: string = text.substring(openIndex, cursor + 1);
+                        if (this.normalizeEnumeration(segment) === normalizedToken) {
+                            return { position: openIndex, length: segment.length };
+                        }
+                        cursor++;
+                        break;
+                    }
+                }
+                cursor++;
+            }
+
+            if (depth > 0) {
+                break;
+            }
+            searchIndex = cursor;
+        }
+        return undefined;
     }
 
     private ensureSeparated(text: string, startIndex: number, tokenPosition: number, previousToken: string, currentToken: string): void {
