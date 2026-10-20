@@ -10,7 +10,7 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { Stats, closeSync, openSync, readSync, statSync } from "node:fs";
+import { Stats, closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { dirname, sep } from "node:path";
 import { Catalog } from "../Catalog.js";
 import { FileReader } from "../FileReader.js";
@@ -1256,7 +1256,7 @@ export class DTDParser {
         }
         // replace all entities in the declaration
         declaration = this.resolveEntities(declaration);
-      
+
         let i: number = '<!ATTLIST'.length;
         let char: string = declaration.charAt(i);
         // skip spaces before list name
@@ -1403,9 +1403,15 @@ export class DTDParser {
     }
 
     resolveEntity(publicId: string, systemId: string): string {
-        let location: string | undefined = this.catalog?.resolveEntity(publicId, systemId);
-        if (!location && systemId !== '' && !systemId.startsWith('http')) {
-            location = this.makeAbsolute(systemId);
+        let location: string | undefined;
+        if (systemId !== '' && !systemId.startsWith('http')) {
+            const localLocation: string = this.makeAbsolute(systemId);
+            if (existsSync(localLocation)) {
+                location = localLocation;
+            }
+        }
+        if (!location) {
+            location = this.catalog?.resolveEntity(publicId, systemId);
         }
         if (location) {
             return location;
