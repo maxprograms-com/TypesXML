@@ -1662,10 +1662,10 @@ export class SAXParser {
         let internalSubset: string = '';
         if (this.lookingAt('[')) {
             this.pointer++; // skip '['
-            let depth: number = 1;
             let inQuotes: boolean = false;
             let quoteChar: string = '';
-            while (depth > 0) {
+            let inComment: boolean = false;
+            while (true) {
                 this.ensureLookahead(1);
                 if (this.pointer >= this.buffer.length) {
                     if (this.sourceEnded) {
@@ -1676,6 +1676,17 @@ export class SAXParser {
                     }
                 }
                 const char: string = this.buffer.charAt(this.pointer);
+                if (inComment) {
+                    if (this.buffer.startsWith('-->', this.pointer)) {
+                        internalSubset += '-->';
+                        this.pointer += 3;
+                        inComment = false;
+                    } else {
+                        internalSubset += char;
+                        this.pointer++;
+                    }
+                    continue;
+                }
                 if (inQuotes) {
                     internalSubset += char;
                     this.pointer++;
@@ -1685,6 +1696,12 @@ export class SAXParser {
                     }
                     continue;
                 }
+                if (this.buffer.startsWith('<!--', this.pointer)) {
+                    internalSubset += '<!--';
+                    this.pointer += 4;
+                    inComment = true;
+                    continue;
+                }
                 if (char === '"' || char === '\'') {
                     inQuotes = true;
                     quoteChar = char;
@@ -1692,19 +1709,17 @@ export class SAXParser {
                     this.pointer++;
                     continue;
                 }
-                if (char === '[') {
-                    depth++;
-                    internalSubset += char;
-                    this.pointer++;
-                    continue;
-                }
                 if (char === ']') {
-                    depth--;
-                    this.pointer++;
-                    if (depth === 0) {
+                    let endPointer: number = this.pointer + 1;
+                    while (endPointer < this.buffer.length && XMLUtils.isXmlSpace(this.buffer.charAt(endPointer))) {
+                        endPointer++;
+                    }
+                    if (this.buffer.charAt(endPointer) === '>') {
+                        this.pointer++;
                         break;
                     }
                     internalSubset += char;
+                    this.pointer++;
                     continue;
                 }
                 internalSubset += char;
