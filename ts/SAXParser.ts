@@ -2165,10 +2165,10 @@ export class SAXParser {
                 }
             }
             if (seen.has(name)) {
-                throw new Error(`Malformed attributes list: duplicate attribute "${name}" in "${originalText}"`);
+                throw new Error('Malformed attributes list: duplicate attribute "' + name + '" in "' + originalText + '"');
             }
             seen.add(name);
-            pairs.push({ name, value });
+            pairs.push({ name, value: value.replaceAll(/[\t\n\r]/g, ' ') });
         }
         return pairs;
     }
@@ -2232,15 +2232,6 @@ export class SAXParser {
         const hasTabReference: boolean = this.containsNumericCharReference(rawValue, 0x09);
 
         let result: string = expandedValue;
-        const hasLiteralLineBreak: boolean = rawValue.indexOf('\n') !== -1 || rawValue.indexOf('\r') !== -1;
-
-        if (hasLiteralLineBreak) {
-            result = result.replaceAll('\r\n', '\n');
-        }
-
-        if (!hasCarriageReturnReference) {
-            result = result.replaceAll('\r', '\n');
-        }
 
         if (!decl || decl.getType() === 'CDATA') {
             if (!hasLineFeedReference) {
