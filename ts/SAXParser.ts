@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { Catalog } from "./Catalog.js";
 import { Constants } from "./Constants.js";
 import { ContentHandler } from "./ContentHandler.js";
+import { DOMBuilder } from "./DOMBuilder.js";
 import { FileReader } from "./FileReader.js";
 import { NeedMoreDataError } from "./NeedMoreDataError.js";
 import { RelaxNGParser } from "./RelaxNGParser.js";
@@ -31,6 +32,8 @@ import { DTDGrammar } from "./dtd/DTDGrammar.js";
 import { DTDParser } from "./dtd/DTDParser.js";
 import { FetchUrls } from "./fetchUrls.js";
 import { Grammar, GrammarType, ValidationError, ValidationResult } from "./grammar/Grammar.js";
+import { GrammarCache } from "./grammar/GrammarCache.js";
+import { RelaxNGGrammar } from "./grammar/RelaxNGGrammar.js";
 import { SchemaBuilder } from "./schema/SchemaBuilder.js";
 import { SchemaGrammar } from "./schema/SchemaGrammar.js";
 
@@ -94,6 +97,7 @@ export class SAXParser {
     xmlDeclarationParsed: boolean = false;
     leadingContentBeforeXmlDeclaration: boolean = false;
     schemaLoadingEnabled: boolean = true;
+    grammarCache: GrammarCache | undefined;
 
     constructor() {
         this.characterRun = '';
@@ -134,6 +138,13 @@ export class SAXParser {
 
     setSchemaLoadingEnabled(enabled: boolean): void {
         this.schemaLoadingEnabled = enabled;
+    }
+
+    setGrammarCache(cache: GrammarCache | undefined): void {
+        this.grammarCache = cache;
+        if (this.contentHandler instanceof DOMBuilder) {
+            this.contentHandler.setGrammarCache(cache);
+        }
     }
 
     parseFile(path: string, encoding?: BufferEncoding): void {
@@ -1202,13 +1213,24 @@ export class SAXParser {
             this.processedSchemaLocations.add(resolvedPath);
             this.processedSchemaLocations.add(identifier);
             if (this.validating) {
-                const builder: SchemaBuilder = new SchemaBuilder(this.catalog);
-                const grammar: SchemaGrammar = builder.buildGrammar(resolvedPath);
-                const existing: Grammar | undefined = this.contentHandler?.getGrammar();
-                if (existing instanceof SchemaGrammar) {
-                    existing.mergeFrom(grammar);
+                const cachedGrammar: Grammar | undefined = this.grammarCache?.get(resolvedPath);
+                if (cachedGrammar !== undefined) {
+                    const existingCached: Grammar | undefined = this.contentHandler?.getGrammar();
+                    if (existingCached instanceof SchemaGrammar && cachedGrammar instanceof SchemaGrammar) {
+                        existingCached.mergeFrom(cachedGrammar);
+                    } else {
+                        this.contentHandler?.setGrammar(cachedGrammar);
+                    }
                 } else {
-                    this.contentHandler?.setGrammar(grammar);
+                    const builder: SchemaBuilder = new SchemaBuilder(this.catalog);
+                    const grammar: SchemaGrammar = builder.buildGrammar(resolvedPath);
+                    const existing: Grammar | undefined = this.contentHandler?.getGrammar();
+                    if (existing instanceof SchemaGrammar) {
+                        existing.mergeFrom(grammar);
+                    } else {
+                        this.contentHandler?.setGrammar(grammar);
+                    }
+                    this.grammarCache?.put(resolvedPath, grammar);
                 }
             }
             return true;
@@ -1529,9 +1551,16 @@ export class SAXParser {
                 }
                 return;
             }
-            let relaxngParser = new RelaxNGParser(resolvedPath, this.catalog);
-            this.relaxNGDefaultAttributes = relaxngParser.getElements();
-            this.isRelaxNG = true;
+            const cachedGrammar: Grammar | undefined = this.grammarCache?.get(resolvedPath);
+            if (cachedGrammar instanceof RelaxNGGrammar) {
+                this.relaxNGDefaultAttributes = cachedGrammar.getDefaultAttributesMap();
+                this.isRelaxNG = true;
+            } else {
+                let relaxngParser = new RelaxNGParser(resolvedPath, this.catalog);
+                this.relaxNGDefaultAttributes = relaxngParser.getElements();
+                this.isRelaxNG = true;
+                this.grammarCache?.put(resolvedPath, new RelaxNGGrammar(this.relaxNGDefaultAttributes));
+            }
         } catch (error: unknown) {
             if (error instanceof Error) {
                 throw new Error(`Error accessing RelaxNG schema at ${href}: ${error.message}`, { cause: error });
@@ -1777,6 +1806,21 @@ export class SAXParser {
             return;
         }
 
+        const cachedGrammar: Grammar | undefined = this.grammarCache?.get(resolvedLocation);
+        if (cachedGrammar !== undefined) {
+            // Merge into any grammar the internal subset already created, do not replace it
+            const currentGrammar: Grammar | undefined = this.contentHandler?.getGrammar();
+            if (currentGrammar instanceof DTDGrammar && cachedGrammar instanceof DTDGrammar) {
+                currentGrammar.merge(cachedGrammar);
+            } else {
+                this.contentHandler?.setGrammar(cachedGrammar);
+            }
+            if (resolvedLocation.startsWith(tmpdir())) {
+                try { unlinkSync(resolvedLocation); } catch (e: unknown) { /* ignore */ }
+            }
+            return;
+        }
+
         const existingGrammar: Grammar | undefined = this.contentHandler?.getGrammar();
         const baseDir: string | undefined = this.readingFromFile && this.currentFile ? dirname(this.currentFile) : undefined;
         const parser: DTDParser = existingGrammar instanceof DTDGrammar ? new DTDParser(existingGrammar, baseDir) : new DTDParser(undefined, baseDir);
@@ -1789,6 +1833,7 @@ export class SAXParser {
         try {
             const updatedGrammar: DTDGrammar = parser.parseDTD(resolvedLocation);
             this.contentHandler?.setGrammar(updatedGrammar);
+            this.grammarCache?.put(resolvedLocation, updatedGrammar);
         } catch (error: unknown) {
             if (resolvedLocation.startsWith(tmpdir())) {
                 try { unlinkSync(resolvedLocation); } catch (e: unknown) { /* ignore */ }

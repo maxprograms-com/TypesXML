@@ -25,6 +25,7 @@ import { XMLUtils } from "./XMLUtils.js";
 import { DTDParser } from "./dtd/DTDParser.js";
 import { DTDGrammar } from "./dtd/DTDGrammar.js";
 import { Grammar } from "./grammar/Grammar.js";
+import { GrammarCache } from "./grammar/GrammarCache.js";
 
 export class DOMBuilder implements ContentHandler {
 
@@ -35,6 +36,7 @@ export class DOMBuilder implements ContentHandler {
     catalog: Catalog | undefined;
     dtdParser: DTDParser | undefined;
     grammar: Grammar | undefined;
+    grammarCache: GrammarCache | undefined;
 
     initialize(): void {
         this.document = new XMLDocument();
@@ -55,6 +57,10 @@ export class DOMBuilder implements ContentHandler {
 
     setCatalog(catalog: Catalog): void {
         this.catalog = catalog;
+    }
+
+    setGrammarCache(cache: GrammarCache | undefined): void {
+        this.grammarCache = cache;
     }
 
     getDocument(): XMLDocument | undefined {
@@ -205,11 +211,17 @@ export class DOMBuilder implements ContentHandler {
         if (this.catalog) {
             const url = this.catalog.resolveEntity(publicId, systemId);
             if (url) {
+                const cachedGrammar: Grammar | undefined = this.grammarCache?.get(url);
+                if (cachedGrammar !== undefined) {
+                    this.setGrammar(cachedGrammar);
+                    return;
+                }
                 if (!this.dtdParser) {
                     this.dtdParser = new DTDParser();
                 }
                 const dtdGrammar: DTDGrammar = this.dtdParser.parseDTD(url);
                 this.setGrammar(dtdGrammar);
+                this.grammarCache?.put(url, dtdGrammar);
             }
         }
     }

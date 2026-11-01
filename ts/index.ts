@@ -60,6 +60,8 @@ export type { ContentParticle } from "./dtd/contentParticle.js";
 // Grammar classes
 export { AttributeInfo, AttributeUse, GrammarType, ValidationContext, ValidationError, ValidationResult, ValidationWarning } from "./grammar/Grammar.js";
 export type { Grammar } from "./grammar/Grammar.js";
+export { GrammarCache } from "./grammar/GrammarCache.js";
+export { RelaxNGGrammar } from "./grammar/RelaxNGGrammar.js";
 
 // XML Schema classes
 export { SchemaAll } from "./schema/SchemaAll.js";

@@ -251,6 +251,26 @@ You will then see the defaults in DOM output and SAX callbacks.
 
 The sample command `npm run relaxng-defaults` demonstrates this with a RelaxNG grammar resolved through the catalog: the parser pulls default attributes from `library-rng.xml` even though validation remains disabled.
 
+### Caching grammars across documents
+
+Parsing a grammar takes time. When you process many documents that reference the same DTD, XML Schema, or RelaxNG grammar, hand the parser a `GrammarCache` so each grammar is parsed only once:
+
+```ts
+import { DOMBuilder, GrammarCache, SAXParser } from "typesxml";
+
+const cache = new GrammarCache();
+for (const file of files) {
+    const handler = new DOMBuilder();
+    const parser = new SAXParser();
+    parser.setContentHandler(handler);
+    parser.setCatalog(catalog);
+    parser.setGrammarCache(cache);
+    parser.parseFile(file);
+}
+```
+
+The cache is keyed by the resolved grammar URL, so documents using different grammars can share one cache. `GrammarCache.get` returns a copy of the cached grammar, which keeps document-specific declarations (for example an internal DTD subset) from leaking into the cached grammar used by the next document. Create one cache per batch run and discard it when the run ends.
+
 ## 10. Error Handling and Diagnostics
 
 Wrap parsing calls with `try/catch` or use the promise returned by `parseStream` to intercept errors. For debugging, inspect the parser’s diagnostic maps:

@@ -109,6 +109,27 @@ parser.setCatalog(myCatalog);
 parser.setValidating(true); // Turns on DTD and XML Schema validation
 ```
 
+### Caching grammars
+
+When you parse many documents that share the same DTD, XML Schema, or RelaxNG grammar, parsing the grammar once per document is wasteful. Pass a `GrammarCache` to the parser to parse each grammar only once per run:
+
+```ts
+import { DOMBuilder, GrammarCache, SAXParser } from "typesxml";
+
+const cache = new GrammarCache();
+for (const file of files) {
+    const handler = new DOMBuilder();
+    const parser = new SAXParser();
+    parser.setContentHandler(handler);
+    parser.setCatalog(myCatalog);
+    parser.setGrammarCache(cache);
+    parser.parseFile(file);
+    // ...
+}
+```
+
+The cache is keyed by the resolved grammar URL, so different grammars coexist safely. A grammar fetched from the cache is a copy: document-specific declarations (such as an internal DTD subset) never modify the cached grammar. The caller owns the cache lifetime; create one per batch run and discard it afterwards.
+
 ## Documentation & Samples
 
 - Read the step-by-step [TypesXML tutorial](docs/tutorial.md) for guided workflows.
