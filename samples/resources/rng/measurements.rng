@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<grammar xmlns="http://relaxng.org/ns/structure/1.0"
+         datatypeLibrary="urn:typesxml:samples:datatypes">
+    <start>
+        <element name="measurements">
+            <zeroOrMore>
+                <element name="reading">
+                    <data type="evenInteger">
+                        <param name="maxInclusive">100</param>
+                    </data>
+                </element>
+            </zeroOrMore>
+        </element>
+    </start>
+</grammar>

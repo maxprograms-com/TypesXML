@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { DOMBuilder, SAXParser } from "typesxml";
 import { request } from "node:https";
 

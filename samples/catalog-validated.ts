@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Catalog, DOMBuilder, SAXParser } from "typesxml";

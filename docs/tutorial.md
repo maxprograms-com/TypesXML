@@ -2,7 +2,7 @@
 
 This tutorial walks through the most common workflows for the TypesXML toolkit. Each section builds on the previous one so you can quickly wire the parser into a TypeScript or Node.js project. If you need to move between XML and JSON, pair this guide with the dedicated [JSON and XML Conversion Guide](jsonTutorial.md).
 
-For a feature overview see the [project README](../README.md), and download the runnable snippets described here from the [`samples/` guide](../samples/README.md).
+For a feature overview see the [project README](../README.md), and see the [`samples/` guide](../samples/README.md) for the runnable snippets described here.
 
 ## 1. Installation
 
@@ -16,14 +16,17 @@ TypesXML ships TypeScript declaration files, so you get full intellisense in edi
 
 ### Grab the Ready-Made Samples
 
-If you want to jump straight to a working project, download the `samples/` folder from the repository (or clone the repo and `cd samples`). Then install the dependencies and run any script with Node:
+The `samples/` folder contains runnable scripts. They use the library built in the parent folder, so build it first:
 
 ```bash
+npm install
+npm run build
+cd samples
 npm install
 npm run parse-file
 ```
 
-Each npm script runs `tsc -p tsconfig.json` and then invokes the emitted file from `dist/`, so the workflow matches a typical NodeNext project build without installing extra tooling. The folder includes a `resources/` directory with the XML catalog, schema, and sample document used throughout this guide.
+Each npm script runs `tsc -p tsconfig.json` and then invokes the emitted file from `dist/`, so the workflow matches a typical NodeNext project build without installing extra tooling. The folder includes a `resources/` directory with the XML catalog, schema, and sample document used throughout this guide. Some snippets omit `import` statements for brevity; the complete code, imports included, is in `samples/`.
 
 ## 2. Parsing Your First XML File
 
@@ -104,19 +107,20 @@ const parser = new SAXParser();
 parser.setCatalog(catalog); // Enables catalog-based resolution.
 parser.setContentHandler(handler);
 parser.parseFile("samples/resources/xml/library.xml"); // Use "resources/..." inside the samples folder.
+```
 
 `Catalog` requires an absolute file system path. The snippet above anchors the lookup to the sample’s directory via `import.meta.url`, but any approach that produces an absolute path (for example `resolve(process.cwd(), "catalog/catalog.xml")`) works in your own projects.
-```
 
 The parser now resolves DTDs through the catalog and can locate RelaxNG or XML Schema documents to harvest default attributes, avoiding repetitive HTTP requests and ensuring consistent versions.
 
 ## 5. Enabling Validating Mode
 
-Validation checks the document against its DTD or XML Schema and raises an error when a rule is violated. It does not influence default attribute retrieval — RelaxNG and XML Schema grammars are loaded for defaults whenever they are referenced. The samples folder includes `resources/dtd/sample.dtd` plus matching XML instances so you can see both success and failure cases.
+Validation checks the document against its DTD, XML Schema, or RelaxNG grammar and raises an error when a rule is violated. It does not influence default attribute retrieval — RelaxNG and XML Schema grammars are loaded for defaults whenever they are referenced. The samples folder includes `resources/dtd/sample.dtd` plus matching XML instances so you can see both success and failure cases.
 
 ```ts
 const parser = new SAXParser();
-parser.setValidating(true); // Switches on DTD and XML Schema 1.0 validation.
+parser.setCatalog(catalog); // Resolves the DTD that the sample documents reference.
+parser.setValidating(true); // Switches on DTD, XML Schema 1.0 and RelaxNG validation.
 parser.setContentHandler(handler);
 
 try {
@@ -130,6 +134,118 @@ try {
 Swap the path to `library-invalid.xml` to trigger a validation error (missing the required `isbn` attribute) and inspect the thrown message.
 
 When running the bundled samples, use `npm run catalog-validated -- dtd` for the valid DTD case or `npm run catalog-validated -- invalid` to see the failure in action. The default `npm run catalog-validated` command sticks with the schema-backed example to highlight merged defaults.
+
+### Validating against a RelaxNG grammar
+
+A document selects its RelaxNG grammar with an `xml-model` processing instruction placed before the root element:
+
+```xml
+<?xml-model href="measurements.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+```
+
+With `parser.setValidating(true)` the parser checks the elements, attributes, text and datatypes of the document against that grammar and throws an error describing the first violation, including the element path. The grammar must use the XML syntax. The `href` is resolved relative to the document, and through the catalog if one is configured.
+
+TypesXML also checks the grammar itself. A schema that is not valid RelaxNG fails to load. A schema that breaks one of the RelaxNG restrictions is reported as a validation failure on the first element of the document. Without `setValidating(true)` a grammar is only used to merge default attribute values, and a grammar that cannot be loaded produces a warning instead of an error.
+
+The datatype libraries `""` (built-in `string` and `token`), `http://www.w3.org/2001/XMLSchema-datatypes` and the compatibility library `http://relaxng.org/ns/compatibility/datatypes/1.0` (`ID`, `IDREF` and `IDREFS`, with uniqueness and reference checks) are available out of the box.
+
+### Custom RelaxNG datatype libraries
+
+A `datatypeLibrary` attribute in a grammar is an identifier, not an address: TypesXML never downloads anything from it. To use a datatype library other than the three above, implement the `DatatypeLibrary` interface and register it with the shared `DatatypeLibraryRegistry` under the same URI the grammar uses:
+
+```ts
+import { DatatypeException, DatatypeLibraryRegistry, IdType, StreamingValidatorImpl } from "typesxml";
+import type { Datatype, DatatypeBuilder, DatatypeLibrary, DatatypeStreamingValidator, DatatypeValidationContext } from "typesxml";
+
+class EvenInteger implements Datatype {
+    constructor(private readonly maxInclusive: number | undefined) { }
+
+    isValid(literal: string, _context: DatatypeValidationContext | null): boolean {
+        const text: string = literal.trim();
+        if (!/^-?\d+$/.test(text)) {
+            return false;
+        }
+        const value: number = Number(text);
+        return value % 2 === 0 && (this.maxInclusive === undefined || value <= this.maxInclusive);
+    }
+
+    checkValid(literal: string, context: DatatypeValidationContext | null): void {
+        if (!this.isValid(literal, context)) {
+            throw new DatatypeException("\"" + literal + "\" is not a valid evenInteger");
+        }
+    }
+
+    createStreamingValidator(context: DatatypeValidationContext | null): DatatypeStreamingValidator {
+        return new StreamingValidatorImpl(this, context);
+    }
+
+    createValue(literal: string, context: DatatypeValidationContext | null): unknown | null {
+        return this.isValid(literal, context) ? Number(literal.trim()) : null;
+    }
+
+    sameValue(first: unknown, second: unknown): boolean {
+        return first === second;
+    }
+
+    valueHashCode(value: unknown): number {
+        return Number(value) | 0;
+    }
+
+    getIdType(): IdType {
+        return IdType.NULL;
+    }
+
+    isContextDependent(): boolean {
+        return false;
+    }
+}
+
+class EvenIntegerBuilder implements DatatypeBuilder {
+    private maxInclusive: number | undefined;
+
+    addParameter(name: string, value: string, _context: DatatypeValidationContext | null): void {
+        if (name !== "maxInclusive") {
+            throw new DatatypeException("Unsupported parameter \"" + name + "\"");
+        }
+        this.maxInclusive = Number(value);
+    }
+
+    createDatatype(): Datatype {
+        return new EvenInteger(this.maxInclusive);
+    }
+}
+
+class SampleLibrary implements DatatypeLibrary {
+    createDatatypeBuilder(typeName: string): DatatypeBuilder {
+        if (typeName !== "evenInteger") {
+            throw new DatatypeException("Unknown datatype \"" + typeName + "\"");
+        }
+        return new EvenIntegerBuilder();
+    }
+
+    createDatatype(typeName: string): Datatype {
+        return this.createDatatypeBuilder(typeName).createDatatype();
+    }
+}
+
+DatatypeLibraryRegistry.getInstance().registerLibrary("urn:typesxml:samples:datatypes", new SampleLibrary());
+```
+
+The interfaces mirror the Java `org.relaxng.datatype` API:
+
+- `DatatypeLibrary` creates a `DatatypeBuilder` for a type name (`createDatatypeBuilder`) or the plain datatype (`createDatatype`).
+- `DatatypeBuilder` receives the `param` elements of a `data` pattern through `addParameter` and returns the configured `Datatype` from `createDatatype`.
+- `Datatype` validates a lexical value (`isValid`, `checkValid`), turns it into a value object (`createValue`, which returns `null` when the text is not valid), compares value objects (`sameValue`, `valueHashCode`) and reports whether it needs the namespace context (`isContextDependent`) or has ID semantics (`getIdType`).
+- `DatatypeValidationContext` gives context-dependent types access to namespace prefixes, the base URI, unparsed entities and notations.
+
+Throw a `DatatypeException` from a builder or library to reject an unknown type or an unsupported parameter.
+
+Keep in mind:
+
+- The registry is shared by every parser in the process. Register a library before parsing documents whose grammar uses it.
+- A `data` or `value` pattern that uses an unregistered library makes validation fail with "Unsupported datatype library".
+
+The sample `npm run relaxng-custom-datatype` registers this library and validates `measurements-valid.xml` and `measurements-invalid.xml` against `resources/rng/measurements.rng`.
 
 ## 6. Parsing from a String
 
@@ -245,7 +361,7 @@ TypesXML collects default attribute values declared in any grammar it can load (
 To benefit from this feature:
 
 1. Supply an OASIS catalog that resolves schema references (or otherwise ensure the grammars are reachable).
-2. Enable validation (`parser.setValidating(true)`) only if you need DTD or XML Schema 1.0 enforcement; default attributes are merged regardless.
+2. Enable validation (`parser.setValidating(true)`) only if you need DTD, XML Schema 1.0 or RelaxNG enforcement; default attributes are merged regardless.
 
 You will then see the defaults in DOM output and SAX callbacks.
 
@@ -256,18 +372,23 @@ The sample command `npm run relaxng-defaults` demonstrates this with a RelaxNG g
 Parsing a grammar takes time. When you process many documents that reference the same DTD, XML Schema, or RelaxNG grammar, hand the parser a `GrammarCache` so each grammar is parsed only once:
 
 ```ts
-import { DOMBuilder, GrammarCache, SAXParser } from "typesxml";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Catalog, DOMBuilder, GrammarCache, SAXParser } from "typesxml";
 
+const sampleRoot = fileURLToPath(new URL("..", import.meta.url));
+const catalog = new Catalog(resolve(sampleRoot, "resources/catalog/catalog.xml"));
 const cache = new GrammarCache();
-for (const file of files) {
-    const handler = new DOMBuilder();
+for (const name of ["library.xml", "library-rng.xml", "library-valid.xml"]) {
     const parser = new SAXParser();
-    parser.setContentHandler(handler);
+    parser.setContentHandler(new DOMBuilder());
     parser.setCatalog(catalog);
     parser.setGrammarCache(cache);
-    parser.parseFile(file);
+    parser.parseFile(resolve(sampleRoot, "resources/xml", name));
 }
 ```
+
+The sample command `npm run grammar-cache` runs this loop and compares the parse times with and without the cache.
 
 The cache is keyed by the resolved grammar URL, so documents using different grammars can share one cache. `GrammarCache.get` returns a copy of the cached grammar, which keeps document-specific declarations (for example an internal DTD subset) from leaking into the cached grammar used by the next document. Create one cache per batch run and discard it when the run ends.
 
@@ -288,7 +409,7 @@ These collections help you confirm which schemas were loaded and where defaults 
 - Combine `SAXParser` with your application’s data model by creating specialised handlers.
 - Use `DOMBuilder` for modification-heavy workflows, then serialise with `XMLDocument#toString()`.
 - Explore the source in `ts/` for advanced utilities such as indentation helpers, writers, and RelaxNG support.
-- Download the `samples/` folder, run `npm install`, and execute `npm run parse-file` to test everything with Node immediately.
+- Run the scripts under `samples/` to try everything with Node.
 - Browse the runnable snippets under `samples/` for end-to-end code you can adapt.
 
 TypesXML is designed for modular extension—mix and match DOM, SAX, catalog resolution, and schema defaults to suit your application.

@@ -576,25 +576,25 @@ export class SAXParser {
         const resolvedEntity: string | undefined = grammar?.resolveEntity(name);
 
         if (name === 'lt') {
-            this.contentHandler?.characters('<');
+            this.emitCharacters('<');
         } else if (name === 'gt') {
-            this.contentHandler?.characters('>');
+            this.emitCharacters('>');
         } else if (name === 'amp') {
-            this.contentHandler?.characters('&');
+            this.emitCharacters('&');
         } else if (name === 'apos') {
-            this.contentHandler?.characters('\'');
+            this.emitCharacters('\'');
         } else if (name === 'quot') {
-            this.contentHandler?.characters('"');
+            this.emitCharacters('"');
         } else if (name.startsWith('#x')) {
             const codePoint: number = Number.parseInt(name.substring(2), 16);
             XMLUtils.ensureValidXmlCodePoint(this.xmlVersion, codePoint, `character reference &#x${name.substring(2)};`);
             const char: string = String.fromCodePoint(codePoint);
-            this.contentHandler?.characters(char);
+            this.emitCharacters(char);
         } else if (name.startsWith('#')) {
             const codePoint: number = Number.parseInt(name.substring(1), 10);
             XMLUtils.ensureValidXmlCodePoint(this.xmlVersion, codePoint, `character reference &#${name.substring(1)};`);
             const char: string = String.fromCodePoint(codePoint);
-            this.contentHandler?.characters(char);
+            this.emitCharacters(char);
         } else if (resolvedEntity !== undefined) {
             this.pointer++; // skip ';'
             const remaining: string = this.buffer.substring(this.pointer);
@@ -845,7 +845,7 @@ export class SAXParser {
             throw new Error('Mismatched element tags: expected closing tag for "' + expectedName + '" but found "' + name + '"');
         }
         // Validate element content when validating mode is enabled  
-        if (this.validating && !this.isRelaxNG) {
+        if (this.validating) {
             let namespace: string = '';
             if (this.namespaceContextStack.length > 0) {
                 this.namespaceContextStack[this.namespaceContextStack.length - 1].forEach((uri: string, prefix: string) => {
@@ -1369,6 +1369,14 @@ export class SAXParser {
         return context.get(parts.prefix);
     }
 
+    emitCharacters(text: string): void {
+        const grammar: Grammar | undefined = this.contentHandler?.getGrammar();
+        if (this.validating && grammar instanceof RelaxNGGrammar) {
+            grammar.characters(text);
+        }
+        this.contentHandler?.characters(text);
+    }
+
     cleanCharacterRun(): void {
         if (this.characterRun !== '') {
             if (this.rootParsed) {
@@ -1377,7 +1385,7 @@ export class SAXParser {
                     this.contentHandler?.ignorableWhitespace(this.characterRun);
                 } else {
                     // in an element
-                    this.contentHandler?.characters(this.characterRun);
+                    this.emitCharacters(this.characterRun);
                 }
             } else {
                 // in prolog
@@ -1554,12 +1562,15 @@ export class SAXParser {
             const cachedGrammar: Grammar | undefined = this.grammarCache?.get(resolvedPath);
             if (cachedGrammar instanceof RelaxNGGrammar) {
                 this.relaxNGDefaultAttributes = cachedGrammar.getDefaultAttributesMap();
+                this.contentHandler?.setGrammar(cachedGrammar);
                 this.isRelaxNG = true;
             } else {
-                let relaxngParser = new RelaxNGParser(resolvedPath, this.catalog);
-                this.relaxNGDefaultAttributes = relaxngParser.getElements();
-                this.isRelaxNG = true;
-                this.grammarCache?.put(resolvedPath, new RelaxNGGrammar(this.relaxNGDefaultAttributes));
+                let relaxngParser: RelaxNGParser = new RelaxNGParser(resolvedPath, this.catalog);
+                const grammar: RelaxNGGrammar = relaxngParser.getGrammar();
+                this.relaxNGDefaultAttributes = grammar.getDefaultAttributesMap();
+                this.grammarCache?.put(resolvedPath, grammar);
+                this.contentHandler?.setGrammar(grammar);
+                this.isRelaxNG = true;                
             }
         } catch (error: unknown) {
             if (error instanceof Error) {
@@ -2258,14 +2269,11 @@ export class SAXParser {
             return attributes;
         }
         const declarations: Map<string, AttDecl> | undefined = grammar.getElementAttributesMap(elementName);
-        if (!declarations || declarations.size === 0) {
-            return attributes;
-        }
         const normalized: Map<string, string> = new Map<string, string>();
         attributes.forEach((value: string, name: string) => {
             const expanded: string = this.decodeAttributeEntities(value, grammar);
             XMLUtils.ensureValidXmlCharacters(this.xmlVersion, expanded, 'attribute value');
-            const decl = declarations.get(name);
+            const decl = declarations?.get(name);
             normalized.set(name, this.normalizeAttributeValue(value, expanded, decl));
         });
         return normalized;
