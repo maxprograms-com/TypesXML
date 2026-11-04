@@ -100,11 +100,11 @@ export class RelaxNGDefaultValues {
         if (!(attribute.nameClass instanceof NameNameClass) || !(element.nameClass instanceof NameNameClass)) {
             throw new Error(prefix + 'has a default value, so both the attribute and its element must have a single name');
         }
-        if (!this.pool.valueMatches(attribute.pattern, attribute.defaultValue as string, new NamespaceValidationContext(new Map<string, string>(), ''))) {
-            throw new Error(prefix + 'has the default value "' + attribute.defaultValue + '", which does not match its pattern');
-        }
         if (this.containsContextDependent(attribute.pattern, new Set<number>())) {
             throw new Error(prefix + 'has a default value, so its pattern cannot use a context-dependent datatype');
+        }
+        if (!this.pool.valueMatches(attribute.pattern, attribute.defaultValue as string, new NamespaceValidationContext(new Map<string, string>(), ''))) {
+            throw new Error(prefix + 'has the default value "' + attribute.defaultValue + '", which does not match its pattern');
         }
         if (!item.hasChoice || !item.allChoicesOptional) {
             throw new Error(prefix + 'has a default value, so it must be optional: it needs a choice ancestor and every choice ancestor needs an empty alternative');

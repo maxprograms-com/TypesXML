@@ -92,6 +92,9 @@ export class RelaxNGValidator {
     }
 
     endDocument(): void {
+        if (!this.isComplete()) {
+            throw new Error('RelaxNG validation error: document content is incomplete');
+        }
         for (const reference of this.references) {
             if (!this.ids.has(reference.value)) {
                 throw new Error('RelaxNG validation error: IDREF "' + reference.value + '" on element "' + reference.element + '" does not match any ID');

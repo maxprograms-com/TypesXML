@@ -108,15 +108,19 @@ class RelaxNGTestSuite {
 
             let schema: RelaxNGSchema | undefined;
             let loadError: string | undefined;
+            let loadException: unknown;
             try {
                 schema = new RelaxNGParser(schemaPath).getSchema();
             } catch (error) {
                 loadError = error instanceof Error ? error.message : String(error);
+                loadException = error;
             }
             this.total++;
             if (incorrect) {
                 if (loadError === undefined) {
                     this.fail(number, section, 'incorrect schema accepted', schemaElement ? schemaElement.toString().replaceAll(/\s+/g, ' ').substring(0, 160) : '');
+                } else if (this.isUnexpectedError(loadException, loadError)) {
+                    this.fail(number, section, 'incorrect schema rejected by an unexpected error', Object.prototype.toString.call(loadException) + ': ' + loadError.split('\n')[0]);
                 } else {
                     this.passed++;
                 }
@@ -164,6 +168,17 @@ class RelaxNGTestSuite {
 
     private fail(number: number, section: string, kind: string, detail: string): void {
         this.failures.push({ number: number, section: section, kind: kind, detail: detail });
+    }
+
+    private isUnexpectedError(exception: unknown, message: string): boolean {
+        if (!(exception instanceof Error)) {
+            return true;
+        }
+        if (exception instanceof TypeError || exception instanceof RangeError || exception instanceof ReferenceError) {
+            return true;
+        }
+        // a crash wrapped into a plain Error keeps the original message text
+        return /Maximum call stack size exceeded|is not a function|is not defined|Cannot read propert/.test(message);
     }
 
     private report(): void {

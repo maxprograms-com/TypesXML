@@ -99,6 +99,21 @@ class XsdDatatypeBuilder implements DatatypeBuilder {
     }
 
     createDatatype(): Datatype {
+        const facets: SchemaFacets = this.facets;
+        if (facets.length !== undefined) {
+            if (facets.minLength !== undefined && facets.minLength > facets.length) {
+                throw new DatatypeException('minLength "' + facets.minLength + '" is greater than length "' + facets.length + '"');
+            }
+            if (facets.maxLength !== undefined && facets.maxLength < facets.length) {
+                throw new DatatypeException('maxLength "' + facets.maxLength + '" is less than length "' + facets.length + '"');
+            }
+        }
+        if (facets.minLength !== undefined && facets.maxLength !== undefined && facets.minLength > facets.maxLength) {
+            throw new DatatypeException('minLength "' + facets.minLength + '" is greater than maxLength "' + facets.maxLength + '"');
+        }
+        if (facets.fractionDigits !== undefined && facets.totalDigits !== undefined && facets.fractionDigits > facets.totalDigits) {
+            throw new DatatypeException('fractionDigits "' + facets.fractionDigits + '" is greater than totalDigits "' + facets.totalDigits + '"');
+        }
         return new XsdDatatype(this.typeName, { ...this.facets });
     }
 }
