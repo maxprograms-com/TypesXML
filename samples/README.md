@@ -1,18 +1,17 @@
 # TypesXML Samples
 
-These TypeScript snippets mirror the scenarios covered in `docs/tutorial.md`. They import the library exactly as you would in an application that depends on the published npm package.
+These TypeScript snippets mirror the scenarios covered in `docs/tutorial.md`. `typesxml` resolves to the parent folder (`"typesxml": "file:.."`).
 
 Start with the [project README](../README.md) for a high-level overview, then follow the detailed walkthrough in [`docs/tutorial.md`](../docs/tutorial.md) if you need extra context while running these scripts. For XML↔JSON workflows, pair these samples with the [JSON and XML Conversion Guide](../docs/jsonTutorial.md).
 
 ## Prerequisites
 
 ```bash
-# When using this folder on its own
-npm install
-
-# When running from the repository root (optional)
+# Repository root
 npm install
 npm run build
+
+# Samples
 cd samples
 npm install
 ```
@@ -28,6 +27,8 @@ A DTD-backed pair—`xml/library-valid.xml` and `xml/library-invalid.xml`—demo
 - `parse-file.ts` – Parse a local XML file, traverse the DOM, and report attribute values.
 - `catalog-validated.ts` – Load an OASIS catalog, show XML Schema merged default attributes, and optionally enforce DTD validation via command-line flags.
 - `relaxng-defaults.ts` – Resolve a RelaxNG grammar via catalog lookup and observe default attributes merged into the DOM.
+- `relaxng-custom-datatype.ts`: Register a custom RelaxNG datatype library and validate documents against a grammar that uses it.
+- `grammar-cache.ts`: Parse documents that share grammars with and without a `GrammarCache` and compare the timings.
 - `stream-parse.ts` – Fetch an XML document over HTTPS and process it as a stream.
 - `custom-handler.ts` – Implement a bespoke `ContentHandler` that logs SAX events.
 - `json-conversion.ts` – Convert between JSON and XML, comparing simple mode with the metadata-preserving round-trip mode.
@@ -40,6 +41,8 @@ To explore the most common scenarios directly:
 - `npm run stream-parse` – build the samples and fetch a remote XML document over HTTPS, printing the raw payload.
 - `npm run custom-handler` – build the samples and stream SAX events through the logging handler.
 - `npm run relaxng-defaults` – build the samples and parse `library-rng.xml`, showing RelaxNG defaults applied even without validation.
+- `npm run relaxng-custom-datatype`: build the samples, register the custom `evenInteger` datatype library, and validate `measurements-valid.xml` and `measurements-invalid.xml` against `resources/rng/measurements.rng`.
+- `npm run grammar-cache`: build the samples and compare parse times with and without a shared `GrammarCache`.
 - `npm run json-conversion` – build the samples and see JSON↔XML conversion in both simple and round-trip modes.
 
 For the validation sample:

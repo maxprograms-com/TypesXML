@@ -4,6 +4,6 @@ dist/
 .vscode/
 .scannerwork/
 .github/
-tests/
+/tests/
 benchmarks/
 /catalog/

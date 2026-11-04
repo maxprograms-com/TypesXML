@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="../rng/measurements.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<measurements>
+    <reading>2</reading>
+    <reading>7</reading>
+    <reading>102</reading>
+</measurements>

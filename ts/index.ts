@@ -62,6 +62,20 @@ export { AttributeInfo, AttributeUse, GrammarType, ValidationContext, Validation
 export type { Grammar } from "./grammar/Grammar.js";
 export { GrammarCache } from "./grammar/GrammarCache.js";
 export { RelaxNGGrammar } from "./grammar/RelaxNGGrammar.js";
+export { RelaxNGSchema } from "./relaxng/PatternBuilder.js";
+export { IdType } from "./relaxng/datatype/Datatype.js";
+export type { Datatype } from "./relaxng/datatype/Datatype.js";
+export type { DatatypeBuilder } from "./relaxng/datatype/DatatypeBuilder.js";
+export { DatatypeException } from "./relaxng/datatype/DatatypeException.js";
+export type { DatatypeLibrary } from "./relaxng/datatype/DatatypeLibrary.js";
+export type { DatatypeLibraryFactory } from "./relaxng/datatype/DatatypeLibraryFactory.js";
+export { DatatypeLibraryRegistry } from "./relaxng/datatype/DatatypeLibraryRegistry.js";
+export type { DatatypeStreamingValidator } from "./relaxng/datatype/DatatypeStreamingValidator.js";
+export { NamespaceValidationContext } from "./relaxng/datatype/NamespaceValidationContext.js";
+export { ParameterlessDatatypeBuilder } from "./relaxng/datatype/ParameterlessDatatypeBuilder.js";
+export { StreamingValidatorImpl } from "./relaxng/datatype/StreamingValidatorImpl.js";
+export type { ValidationContext as DatatypeValidationContext } from "./relaxng/datatype/ValidationContext.js";
+export { RelaxNGValidator } from "./relaxng/RelaxNGValidator.js";
 
 // XML Schema classes
 export { SchemaAll } from "./schema/SchemaAll.js";

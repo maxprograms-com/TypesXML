@@ -12,7 +12,7 @@
 
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Catalog } from "./Catalog.js";
 import { Constants } from "./Constants.js";
 import { DOMBuilder } from "./DOMBuilder.js";
@@ -22,6 +22,9 @@ import { XMLAttribute } from "./XMLAttribute.js";
 import { XMLElement } from "./XMLElement.js";
 import { XMLNode } from "./XMLNode.js";
 import { type AttributeDefault } from "./XMLSchemaParser.js";
+import { RelaxNGGrammar } from "./grammar/RelaxNGGrammar.js";
+import { PatternBuilder, RelaxNGSchema } from "./relaxng/PatternBuilder.js";
+import { RelaxNGSyntax } from "./relaxng/RelaxNGSyntax.js";
 
 type NameInfo = {
     lexicalName: string;
@@ -29,10 +32,18 @@ type NameInfo = {
     namespace?: string;
 };
 
+type RelaxNGParserOptions = {
+    nested?: boolean;
+    ancestors?: string[];
+    content?: string;
+    skipSyntaxCheck?: boolean;
+};
+
 export class RelaxNGParser {
 
     private readonly catalog?: Catalog;
     private readonly baseDir: string;
+    private readonly ancestors: string[];
     private readonly root: XMLElement;
     private defaultPrefix: string = "";
     private defaultNamespace: string = Constants.RELAXNG_NS_URI;
@@ -40,9 +51,10 @@ export class RelaxNGParser {
     private elements: XMLElement[] = [];
     private divsRemoved: boolean = false;
 
-    constructor(schemaPath: string, catalog?: Catalog) {
+    constructor(schemaPath: string, catalog?: Catalog, options: RelaxNGParserOptions = {}) {
         const absolutePath: string = isAbsolute(schemaPath) ? schemaPath : resolve(schemaPath);
         this.baseDir = dirname(absolutePath);
+        this.ancestors = [...(options.ancestors ?? []), absolutePath];
         const contentHandler: DOMBuilder = new DOMBuilder();
         const parser: SAXParser = new SAXParser();
         if (catalog) {
@@ -50,20 +62,32 @@ export class RelaxNGParser {
             parser.setCatalog(this.catalog);
         }
         parser.setContentHandler(contentHandler);
-        parser.parseFile(absolutePath);
+        if (options.content !== undefined) {
+            parser.parseString(options.content);
+        } else {
+            parser.parseFile(absolutePath);
+        }
         const documentRoot: XMLElement | undefined = contentHandler.getDocument()?.getRoot();
         if (!documentRoot) {
             throw new Error(`RelaxNG schema "${absolutePath}" could not be parsed`);
         }
 
-        this.root = documentRoot;
-        this.defaultPrefix = this.getPrefix(this.root);
+        if (!options.skipSyntaxCheck) {
+            try {
+                RelaxNGSyntax.validate(documentRoot);
+            } catch (error) {
+                const message: string = error instanceof Error ? error.message : String(error);
+                throw new Error('Invalid RelaxNG schema "' + absolutePath + '": ' + message);
+            }
+        }
 
-        const xmlnsDefault: XMLAttribute | undefined = this.root.getAttribute("xmlns");
+        this.defaultPrefix = this.getPrefix(documentRoot);
+
+        const xmlnsDefault: XMLAttribute | undefined = documentRoot.getAttribute("xmlns");
         if (xmlnsDefault) {
             this.defaultNamespace = xmlnsDefault.getValue();
         } else if (this.defaultPrefix) {
-            const prefixedNs: XMLAttribute | undefined = this.root.getAttribute(`xmlns:${this.defaultPrefix}`);
+            const prefixedNs: XMLAttribute | undefined = documentRoot.getAttribute(`xmlns:${this.defaultPrefix}`);
             if (prefixedNs) {
                 this.defaultNamespace = prefixedNs.getValue();
             }
@@ -72,14 +96,33 @@ export class RelaxNGParser {
             this.defaultNamespace = Constants.RELAXNG_NS_URI;
         }
 
-        this.removeForeign(this.root);
-        this.replaceExternalRef(this.root);
-        this.replaceIncludes(this.root);
+        const holder: XMLElement = new XMLElement("holder");
+        holder.addElement(documentRoot);
+        this.removeForeign(holder);
+        this.normalizeSyntax(holder);
+        const baseUri: string = pathToFileURL(absolutePath).href;
+        this.replaceExternalRef(holder, baseUri);
+        this.replaceIncludes(holder, baseUri);
         do {
             this.divsRemoved = false;
-            this.removeDivs(this.root);
+            this.removeDivs(holder);
         } while (this.divsRemoved);
-        this.nameAttribute(this.root, new Map<string, string>());
+        const schemaRoot: XMLElement | undefined = holder.getChildren()[0];
+        if (!schemaRoot) {
+            throw new Error('RelaxNG schema "' + absolutePath + '" does not have a RelaxNG root element');
+        }
+        this.root = schemaRoot;
+        if (!(options.nested ?? false)) {
+            this.nameAttribute(this.root, new Map<string, string>());
+        }
+    }
+
+    getSchema(): RelaxNGSchema {
+        return new PatternBuilder().build(this.root);
+    }
+
+    getGrammar(): RelaxNGGrammar {
+        return new RelaxNGGrammar(this.getElements(), () => this.getSchema());
     }
 
     getElements(): Map<string, Map<string, AttributeDefault>> {
@@ -309,13 +352,45 @@ export class RelaxNGParser {
         element.setContent(newContent);
     }
 
-    private replaceExternalRef(element: XMLElement): void {
+    private nestedParser(resolved: string): RelaxNGParser {
+        if (this.ancestors.includes(resolved)) {
+            throw new Error('RelaxNG schema "' + resolved + '" includes or references itself');
+        }
+        return new RelaxNGParser(resolved, this.catalog, { nested: true, ancestors: this.ancestors });
+    }
+
+    private baseOf(element: XMLElement, base: string): string {
+        const attr: XMLAttribute | undefined = element.getAttribute("xml:base");
+        if (!attr) {
+            return base;
+        }
+        try {
+            return new URL(this.escapeUri(attr.getValue()), base).href;
+        } catch {
+            throw new Error('RelaxNG schema has an invalid xml:base value: ' + attr.getValue());
+        }
+    }
+
+    private keepsWhitespace(element: XMLElement): boolean {
+        const name: string = this.getLocalNameFromElement(element);
+        return name === "value" || name === "param";
+    }
+
+    private inheritAttribute(source: XMLElement, target: XMLElement, name: string): void {
+        const attr: XMLAttribute | undefined = source.getAttribute(name);
+        if (attr && !target.hasAttribute(name)) {
+            target.setAttribute(new XMLAttribute(name, attr.getValue()));
+        }
+    }
+
+    private replaceExternalRef(element: XMLElement, base: string): void {
+        const effectiveBase: string = this.baseOf(element, base);
         const newContent: XMLNode[] = [];
         for (const node of element.getContent()) {
             const nodeType: number = node.getNodeType();
             if (nodeType === Constants.TEXT_NODE) {
                 const textNode: TextNode = node as TextNode;
-                if (!this.isBlankText(textNode)) {
+                if (!this.isBlankText(textNode) || this.keepsWhitespace(element)) {
                     newContent.push(node);
                 }
                 continue;
@@ -329,28 +404,30 @@ export class RelaxNGParser {
                 if (this.getLocalNameFromElement(child) === "externalRef") {
                     const hrefAttr: XMLAttribute | undefined = child.getAttribute("href");
                     const href: string = hrefAttr?.getValue() ?? "";
-                    const resolved: string | undefined = this.resolveHref(href);
+                    const resolved: string | undefined = this.resolveHref(href, this.baseOf(child, effectiveBase));
                     if (!resolved) {
                         throw new Error(`RelaxNG externalRef target not found: ${href}`);
                     }
-                    const parser: RelaxNGParser = new RelaxNGParser(resolved, this.catalog);
-                    newContent.push(parser.getRootElement());
+                    const referenced: XMLElement = this.nestedParser(resolved).getRootElement();
+                    this.inheritAttribute(child, referenced, "ns");
+                    newContent.push(referenced);
                     continue;
                 }
-                this.replaceIncludes(child);
+                this.replaceExternalRef(child, effectiveBase);
                 newContent.push(child);
             }
         }
         element.setContent(newContent);
     }
 
-    private replaceIncludes(element: XMLElement): void {
+    private replaceIncludes(element: XMLElement, base: string): void {
+        const effectiveBase: string = this.baseOf(element, base);
         const newContent: XMLNode[] = [];
         for (const node of element.getContent()) {
             const nodeType: number = node.getNodeType();
             if (nodeType === Constants.TEXT_NODE) {
                 const textNode: TextNode = node as TextNode;
-                if (!this.isBlankText(textNode)) {
+                if (!this.isBlankText(textNode) || this.keepsWhitespace(element)) {
                     newContent.push(node);
                 }
                 continue;
@@ -364,24 +441,94 @@ export class RelaxNGParser {
                 if (this.getLocalNameFromElement(child) === "include") {
                     const hrefAttr: XMLAttribute | undefined = child.getAttribute("href");
                     const href: string = hrefAttr?.getValue() ?? "";
-                    const resolved: string | undefined = this.resolveHref(href);
+                    const resolved: string | undefined = this.resolveHref(href, this.baseOf(child, effectiveBase));
                     if (!resolved) {
                         throw new Error(`RelaxNG include target not found: ${href}`);
                     }
-                    const parser: RelaxNGParser = new RelaxNGParser(resolved, this.catalog);
+                    const included: XMLElement = this.nestedParser(resolved).getRootElement();
+                    if (this.getLocalNameFromElement(included) !== "grammar") {
+                        throw new Error('RelaxNG include target "' + href + '" is not a grammar');
+                    }
+                    this.inheritAttribute(child, included, "ns");
+                    this.removeOverriddenDefinitions(included, child);
                     const div: XMLElement = this.createRelaxNGElement("div");
-                    div.addElement(parser.getRootElement());
+                    for (const includedChild of included.getChildren()) {
+                        for (const attr of included.getAttributes()) {
+                            const attrName: string = attr.getName();
+                            if ((attrName.startsWith("xmlns:") || attrName === "ns" || attrName === "datatypeLibrary") && !includedChild.hasAttribute(attrName)) {
+                                includedChild.setAttribute(new XMLAttribute(attrName, attr.getValue()));
+                            }
+                        }
+                        div.addElement(includedChild);
+                    }
                     for (const includeChild of child.getChildren()) {
                         div.addElement(includeChild);
                     }
                     newContent.push(div);
                     continue;
                 }
-                this.replaceIncludes(child);
+                this.replaceIncludes(child, effectiveBase);
                 newContent.push(child);
             }
         }
         element.setContent(newContent);
+    }
+
+    private removeOverriddenDefinitions(included: XMLElement, include: XMLElement): void {
+        let overridesStart: boolean = false;
+        const overriddenNames: Set<string> = new Set<string>();
+        const scan = (parent: XMLElement): void => {
+            for (const item of parent.getChildren()) {
+                const itemName: string = this.getLocalNameFromElement(item);
+                if (itemName === "start") {
+                    overridesStart = true;
+                } else if (itemName === "define") {
+                    const defineName: string | undefined = item.getAttribute("name")?.getValue();
+                    if (defineName) {
+                        overriddenNames.add(defineName);
+                    }
+                } else if (itemName === "div") {
+                    scan(item);
+                }
+            }
+        };
+        scan(include);
+        if (!overridesStart && overriddenNames.size === 0) {
+            return;
+        }
+        const availableNames: Set<string> = new Set<string>();
+        let hasStart: boolean = false;
+        for (const item of included.getChildren()) {
+            const itemName: string = this.getLocalNameFromElement(item);
+            if (itemName === "start") {
+                hasStart = true;
+            } else if (itemName === "define") {
+                availableNames.add(item.getAttribute("name")?.getValue() ?? "");
+            }
+        }
+        if (overridesStart && !hasStart) {
+            throw new Error("RelaxNG include overrides start, but the included grammar has no start");
+        }
+        for (const overridden of overriddenNames) {
+            if (!availableNames.has(overridden)) {
+                throw new Error('RelaxNG include overrides "' + overridden + '", but the included grammar does not define it');
+            }
+        }
+        const remaining: XMLNode[] = [];
+        for (const node of included.getContent()) {
+            if (node.getNodeType() === Constants.ELEMENT_NODE) {
+                const item: XMLElement = node as XMLElement;
+                const itemName: string = this.getLocalNameFromElement(item);
+                if (itemName === "start" && overridesStart) {
+                    continue;
+                }
+                if (itemName === "define" && overriddenNames.has(item.getAttribute("name")?.getValue() ?? "")) {
+                    continue;
+                }
+            }
+            remaining.push(node);
+        }
+        included.setContent(remaining);
     }
 
     private removeDivs(element: XMLElement): void {
@@ -390,6 +537,14 @@ export class RelaxNGParser {
             if (node.getNodeType() === Constants.ELEMENT_NODE) {
                 const child: XMLElement = node as XMLElement;
                 if (this.getLocalNameFromElement(child) === "div") {
+                    for (const divChild of child.getChildren()) {
+                        for (const attr of child.getAttributes()) {
+                            const attrName: string = attr.getName();
+                            if ((attrName === "ns" || attrName === "datatypeLibrary" || attrName.startsWith("xmlns:")) && !divChild.hasAttribute(attrName)) {
+                                divChild.setAttribute(new XMLAttribute(attrName, attr.getValue()));
+                            }
+                        }
+                    }
                     newContent.push(...child.getContent());
                     this.divsRemoved = true;
                 } else {
@@ -412,8 +567,9 @@ export class RelaxNGParser {
             if (definitionName) {
                 if (this.definitions.has(definitionName)) {
                     const existing: XMLElement = this.definitions.get(definitionName)!;
-                    const combined: XMLNode[] = [...existing.getContent(), ...element.getContent()];
-                    existing.setContent(combined);
+                    const merged: XMLElement = new XMLElement(existing.getName());
+                    merged.setContent([...existing.getContent(), ...element.getContent()]);
+                    this.definitions.set(definitionName, merged);
                 } else {
                     this.definitions.set(definitionName, element);
                 }
@@ -433,33 +589,94 @@ export class RelaxNGParser {
         }
     }
 
-    private nameAttribute(element: XMLElement, context: Map<string, string>): void {
+    private normalizeSyntax(element: XMLElement): void {
+        for (const attr of element.getAttributes()) {
+            const attrName: string = attr.getName();
+            if (attrName === "name" || attrName === "type" || attrName === "combine") {
+                attr.setValue(attr.getValue().replaceAll(/^[ \t\r\n]+|[ \t\r\n]+$/g, ""));
+            } else if (attrName === "datatypeLibrary") {
+                const escaped: string = this.escapeUri(attr.getValue());
+                if (escaped !== "" && !/^[A-Za-z][A-Za-z0-9+.-]*:[^#]+$/.test(escaped)) {
+                    throw new Error('RelaxNG datatypeLibrary "' + attr.getValue() + '" must be an absolute URI without a fragment identifier');
+                }
+                attr.setValue(escaped);
+            }
+        }
+        if (this.getLocalNameFromElement(element) === "name") {
+            const text: string = element.getText().replaceAll(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+            element.setContent([]);
+            element.addString(text);
+        }
+        for (const child of element.getChildren()) {
+            this.normalizeSyntax(child);
+        }
+    }
+
+    private escapeUri(value: string): string {
+        let result: string = "";
+        for (const character of value) {
+            const codePoint: number = character.codePointAt(0) as number;
+            if (codePoint > 127 || codePoint <= 32 || codePoint === 127 || "<>\"{}|\\^`".includes(character)) {
+                for (const byte of Buffer.from(character, "utf8")) {
+                    result += "%" + byte.toString(16).toUpperCase().padStart(2, "0");
+                }
+            } else {
+                result += character;
+            }
+        }
+        return result;
+    }
+
+    private nameAttribute(element: XMLElement, context: Map<string, string>, inheritedNs: string = ""): void {
         const currentContext: Map<string, string> = this.augmentNamespaceContext(context, element);
         const localName: string = this.getLocalNameFromElement(element);
         const isElementPattern: boolean = localName === "element";
         const isAttributePattern: boolean = localName === "attribute";
+        const ownNsAttr: XMLAttribute | undefined = element.getAttribute("ns");
+        const effectiveNs: string = ownNsAttr ? ownNsAttr.getValue() : inheritedNs;
+
+        if ((localName === "name" || localName === "nsName") && !ownNsAttr) {
+            let resolved: string = inheritedNs;
+            if (localName === "name") {
+                const lexical: string = element.getText().trim();
+                const separatorIndex: number = lexical.indexOf(":");
+                if (separatorIndex !== -1) {
+                    const bound: string | undefined = currentContext.get(lexical.substring(0, separatorIndex));
+                    if (bound === undefined) {
+                        throw new Error('RelaxNG name "' + lexical + '" uses an undeclared namespace prefix');
+                    }
+                    resolved = bound;
+                }
+            }
+            element.setAttribute(new XMLAttribute("ns", resolved));
+        }
+
         if ((isElementPattern || isAttributePattern) && element.hasAttribute("name")) {
             const nameValue: string = element.getAttribute("name")?.getValue() ?? "";
             const nameElement: XMLElement = this.createRelaxNGElement("name");
             nameElement.addString(nameValue);
 
-            const nsAttr: XMLAttribute | undefined = element.getAttribute("ns");
-            if (nsAttr) {
-                nameElement.setAttribute(new XMLAttribute("ns", nsAttr.getValue()));
-                element.removeAttribute("ns");
-            } else {
-                const resolvedNamespace: string | undefined = this.resolveNamespaceBinding(nameValue, currentContext, isElementPattern, isAttributePattern);
-                if (resolvedNamespace) {
-                    nameElement.setAttribute(new XMLAttribute("ns", resolvedNamespace));
+            const separatorIndex: number = nameValue.indexOf(":");
+            let nameNs: string;
+            if (separatorIndex !== -1) {
+                const bound: string | undefined = currentContext.get(nameValue.substring(0, separatorIndex));
+                if (bound === undefined) {
+                    throw new Error('RelaxNG name "' + nameValue + '" uses an undeclared namespace prefix');
                 }
+                nameNs = bound;
+            } else if (ownNsAttr) {
+                nameNs = ownNsAttr.getValue();
+            } else {
+                nameNs = isElementPattern ? inheritedNs : "";
             }
+            nameElement.setAttribute(new XMLAttribute("ns", nameNs));
 
             element.removeAttribute("name");
             const content: XMLNode[] = [nameElement, ...element.getContent()];
             element.setContent(content);
         }
         for (const child of element.getChildren()) {
-            this.nameAttribute(child, currentContext);
+            this.nameAttribute(child, currentContext, effectiveNs);
         }
     }
 
@@ -482,43 +699,31 @@ export class RelaxNGParser {
         return updated;
     }
 
-    private resolveNamespaceBinding(lexicalName: string, context: Map<string, string>, isElementPattern: boolean, isAttributePattern: boolean): string | undefined {
-        const separatorIndex: number = lexicalName.indexOf(":");
-        if (separatorIndex === -1) {
-            if (isElementPattern) {
-                return context.get("") ?? undefined;
-            }
-            if (isAttributePattern) {
-                return undefined;
-            }
-            return context.get("") ?? undefined;
-        }
-        const prefix: string = lexicalName.substring(0, separatorIndex);
-        return context.get(prefix);
-    }
-
-    private resolveHref(href: string): string | undefined {
+    private resolveHref(href: string, base: string): string | undefined {
         if (!href) {
             return undefined;
         }
 
-        let candidate: string = href;
-        if (candidate.startsWith("file://")) {
-            try {
-                candidate = fileURLToPath(candidate);
-            } catch {
-                return undefined;
-            }
+        let absolute: URL;
+        try {
+            absolute = new URL(this.escapeUri(href), base);
+        } catch {
+            return undefined;
+        }
+        if (absolute.hash !== "") {
+            throw new Error('RelaxNG href must not contain a fragment identifier: ' + href);
         }
 
         const attempts: Array<string | undefined> = [];
         if (this.catalog) {
-            const systemMatch = this.catalog.matchSystem(candidate);
-            const uriMatch = this.catalog.matchURI(candidate);
-            attempts.push(systemMatch);
-            attempts.push(uriMatch);
+            attempts.push(this.catalog.matchSystem(absolute.href));
+            attempts.push(this.catalog.matchURI(absolute.href));
+            attempts.push(this.catalog.matchSystem(href));
+            attempts.push(this.catalog.matchURI(href));
         }
-        attempts.push(candidate);
+        if (absolute.protocol === "file:") {
+            attempts.push(fileURLToPath(absolute));
+        }
 
         for (const attempt of attempts) {
             const normalized: string | undefined = this.normalizeResolvedPath(attempt);
@@ -623,7 +828,7 @@ export class RelaxNGParser {
         return undefined;
     }
 
-    private getRootElement(): XMLElement {
+    getRootElement(): XMLElement {
         return this.root;
     }
 }

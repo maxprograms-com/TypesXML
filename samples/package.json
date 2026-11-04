@@ -12,13 +12,15 @@
     "stream-parse": "npm run build --silent && node dist/stream-parse.js",
     "custom-handler": "npm run build --silent && node dist/custom-handler.js",
     "relaxng-defaults": "npm run build --silent && node dist/relaxng-defaults.js",
+    "relaxng-custom-datatype": "npm run build --silent && node dist/relaxng-custom-datatype.js",
+    "grammar-cache": "npm run build --silent && node dist/grammar-cache.js",
     "json-conversion": "npm run build --silent && node dist/json-conversion.js"
   },
   "dependencies": {
-    "typesxml": "^2.5.0"
+    "typesxml": "file:.."
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^24.19.2",
     "typescript": "^6.0.3"
   }
 }

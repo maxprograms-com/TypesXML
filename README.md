@@ -4,19 +4,19 @@
 [![npm license](https://img.shields.io/npm/l/typesxml)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/implementation-native%20TypeScript-3178c6)](https://www.typescriptlang.org/)
 
-TypesXML is a TypeScript / Node.js XML library for parsing, validating, and processing XML documents. It provides both DOM and streaming (SAX) APIs, along with support for DTD and XML Schema 1.0 validation and XML Catalog resolution.
+TypesXML is a TypeScript / Node.js XML library for parsing, validating, and processing XML documents. It provides both DOM and streaming (SAX) APIs, along with support for DTD, XML Schema 1.0 and RelaxNG validation and XML Catalog resolution.
 
-The library is implemented entirely in TypeScript (no native bindings) and is validated against the official W3C XML test suites for DTD and XML Schema.
+The library is implemented entirely in TypeScript (no native bindings) and is validated against the official W3C XML test suites for DTD and XML Schema, and against a test suite for RelaxNG.
 
 ## Why TypesXML
 
-Most XML tools in JavaScript ecosystems fall into one of two categories: DOM-based models that are easy to use but memory-heavy and unpredictable for large documents, or lightweight parsers that expose raw streaming events without a structured model on top.
+Most XML tools in JavaScript ecosystems fall into one of three categories: DOM-based models that are easy to use but memory-heavy and unpredictable for large documents, lightweight parsers that expose raw streaming events without a structured model on top, or wrappers around native C/C++ parsers that need a compiler toolchain or prebuilt binaries for each platform.
 
 TypesXML sits between these extremes. It is built on a SAX-style foundation but exposes a strongly structured, TypeScript-friendly model that stays predictable even for large and complex XML formats.
 
 - Streaming-oriented processing without requiring full in-memory document trees
 - Structured access to XML data while preserving parsing determinism
-- Native support for DTD and XML Schema validation workflows
+- Native support for DTD, XML Schema and RelaxNG validation workflows
 - Designed for backend and tooling scenarios, not browser DOM manipulation
 
 ## Features
@@ -32,6 +32,7 @@ Core capabilities for parsing, validation, and integration of XML documents:
 
 - Complete DTD parser/validator (including conditional sections and parameter entities)
 - XML Schema 1.0 validation with support for complex types
+- RelaxNG validation (XML syntax), including XML Schema datatypes and ID/IDREF checks
 - Strict XML 1.0 / 1.1 character validation
 
 ### Integration
@@ -43,6 +44,7 @@ Core capabilities for parsing, validation, and integration of XML documents:
 
 - 100% W3C XML DTD test suite
 - 96.7% W3C XML Schema test suite
+- 100% RelaxNG test suite
 
 ## SAX Parser
 
@@ -106,7 +108,7 @@ To enable XML Catalog resolution or validation, configure the parser before invo
 
 ```ts
 parser.setCatalog(myCatalog);
-parser.setValidating(true); // Turns on DTD and XML Schema validation
+parser.setValidating(true); // Turns on DTD, XML Schema and RelaxNG validation
 ```
 
 ### Caching grammars
@@ -204,7 +206,7 @@ If your use case involves large XML documents or streaming pipelines, TypesXML p
 
 ## W3C XML Test Suite
 
-The repository includes code that runs the official W3C XML Conformance Test Suite for DTD and XML Schema grammars.
+The repository includes code that runs the official W3C XML Conformance Test Suite for DTD and XML Schema grammars, and a test suite for RelaxNG.
 
 ### DTD
 
@@ -233,3 +235,18 @@ TypesXML currently passes **96.7%** of the W3C XML Schema Test Suite (2006 editi
    ```
 
 The script compiles the TypeScript sources and executes `ts/tests/XmlSchemaTestSuite.ts`, reporting any conformance failures.
+
+### RelaxNG
+
+TypesXML passes **100%** of the RelaxNG test suite. The suite is a single file, `spectest.xml`, with test cases that check whether a schema is correct or incorrect and whether instance documents are valid or invalid against it.
+
+1. Download [spectest.xml](https://raw.githubusercontent.com/relaxng/jing-trang/master/mod/rng-validate/test/spectest.xml).
+2. Save it as `./tests/relaxng/spectest.xml`.
+3. Install dependencies if needed: `npm install`.
+4. Run the suite:
+
+   ```bash
+   npm run testRelaxNG
+   ```
+
+The script compiles the TypeScript sources and executes `ts/tests/RelaxNGTestSuite.ts`. It prints every failing test case, followed by a summary with the number of passed checks. To run a single test case, set the `RNG_CASE` environment variable to its position in the file, for example `RNG_CASE=42 node dist/cjs/tests/RelaxNGTestSuite.js`.
